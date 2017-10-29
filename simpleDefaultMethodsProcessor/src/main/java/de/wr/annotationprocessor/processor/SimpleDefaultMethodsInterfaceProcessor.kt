@@ -1,8 +1,7 @@
 package de.wr.annotationprocessor.processor
 
 import com.github.javaparser.ast.CompilationUnit
-import com.github.javaparser.ast.expr.LiteralStringValueExpr
-import com.github.javaparser.ast.expr.StringLiteralExpr
+import com.github.javaparser.ast.expr.*
 import com.github.javaparser.ast.stmt.BlockStmt
 import com.github.javaparser.ast.stmt.ReturnStmt
 import de.wr.libsimpledefaultmethods.*
@@ -25,6 +24,8 @@ import java.util.*
 
 import javax.lang.model.SourceVersion.latestSupported
 import javax.lang.model.element.*
+import javax.lang.model.type.TypeKind
+import javax.lang.model.type.TypeMirror
 import kotlin.collections.HashSet
 
 import com.github.javaparser.ast.Modifier as AstModifier
@@ -88,44 +89,6 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
         generateMethodsForClazz(clazzes)
 
         return true
-
-//                .groupBy {
-//                    it.key!!.enclosingElement
-//                }
-//                .flatMap(this::generateMethodsForClazz)
-//                .reduce { r, acc -> r && acc }
-//                .defaultIfEmpty(false)
-//                .blockingGet()
-
-//            .reduce { (r, acc) -> acc && r }
-//            if (element.kind != ElementKind.METHOD) {
-//                error(orig, "The annotated element %s is not meant for %s",
-//                        element, orig)
-//                return false
-//            }
-
-//            // We can cast it, because we know that it of ElementKind.CLASS
-//            val methodElement = element as TypeElement
-//
-//            objectType = typeElement.simpleName.toString()
-//
-//            val qualifiedName = typeElement.qualifiedName.toString()
-//
-//            info(element, "The annotated element %s found", orig)
-//
-//            val classesList = typeElement.enclosedElements
-//                    .filter { it -> it is ExecutableElement && it.returnType.toString().contains("Void") }
-//                    .map { it -> it as ExecutableElement }
-//
-//            if (classesList.isNotEmpty()) {
-//                classesList.forEach { it -> generateAutoValueClasses(element, it, typeElement) }
-//                if (element.annotationMirrors
-//                        .union(classesList.flatMap { it -> it.annotationMirrors })
-//                        .any { it -> it.toString().contains("Gson") }) {
-//                    generateAutoValueGsonFactory(typeElement)
-//                }
-//            }
-//        }
     }
 
     private fun generateMethodsForClazz(clazzes: Map<Element, List<Map.Entry<Element, List<Pair<Element, Element>>>>>) {
@@ -154,16 +117,45 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
 
                     info(method, "Class %s contains default method %s", clazzElement, method.toString() )
 
-                    val returnStmt = ReturnStmt().setExpression(StringLiteralExpr("test"))
+                    val methodName = method.simpleName.toString()
 
-                    interf.addMethod(method.simpleName.toString(), AstModifier.DEFAULT).setBody(
-                            BlockStmt().addStatement(returnStmt)
-                    ).setType(method.returnType.toString())
+                    //create method inside interface
+                    val realMethod = interf.addMethod(methodName)
+                            .setType(method.returnType.toString())
+                            .removeBody()
 
-                    it.value.forEach {
+                    method.parameters.forEach {
+                        realMethod.addParameter(it.asType().toString(), it.simpleName.toString())
+                    }
+
+                    // create default methods
+                    val defMethodExp = MethodCallExpr(ThisExpr(), methodName)
+
+                    var defValueMap = listOf<Pair<String, String>>()
+
+                    if (it.value.any { it.first == method }) {
+                        defValueMap = method.parameters.map {
+                            Pair(it.simpleName.toString(), getDefaultValue(it.asType()))
+                        }
+                    }
+
+                    it.value.filter { it.first != method }.forEach {
 
                         info(it.second, "Method %s contains default elements %s", it.second, it.first )
                     }
+
+                    defValueMap.forEach {
+                        val (name, value) = it
+                        info(method, "Try to set arg %s = %s", name, value)
+                        defMethodExp.addArgument(value)
+                    }
+
+                    val block = when {
+                        method.returnType.kind == TypeKind.VOID -> BlockStmt().addStatement(defMethodExp)
+                        else -> BlockStmt().addStatement(ReturnStmt().setExpression(defMethodExp))
+                    }
+
+                    interf.addMethod(methodName, AstModifier.DEFAULT).setBody(block).setType(method.returnType.toString())
                 }
 
                 writer.run {
@@ -179,7 +171,25 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
         }
     }
 
-//    private fun generateAutoValueGsonFactory(typeElement: TypeElement) {
+    private fun getDefaultValue(type: TypeMirror): String {
+        return when(type.kind) {
+            TypeKind.INT -> "0"
+            TypeKind.BOOLEAN -> "false"
+            TypeKind.BYTE -> "(byte)0"
+            TypeKind.SHORT -> "(short)0"
+            TypeKind.LONG -> "0l"
+            TypeKind.CHAR -> "0"
+            TypeKind.FLOAT -> "0.0f"
+            TypeKind.DOUBLE -> "0.0d"
+            TypeKind.ARRAY -> "new " + type.toString() + "[0]"
+            else -> when (type.toString()) {
+                "java.lang.String" -> "\"\""
+                else -> "null"
+            }
+        }
+    }
+
+    //    private fun generateAutoValueGsonFactory(typeElement: TypeElement) {
 //        try {
 //            val fileName = typeElement.simpleName.substring(0, 1).toUpperCase() + typeElement.simpleName.substring(1) + "TypeAdapterFactory"
 //            val source = processingEnv.filer.createSourceFile(fileName)
