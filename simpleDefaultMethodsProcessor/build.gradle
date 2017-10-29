@@ -1,0 +1,85 @@
+buildscript {
+    repositories {
+        jcenter()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+    }
+    dependencies {
+        classpath 'com.github.javaparser:javaparser-core:3.2.12'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'kotlin'
+apply plugin: 'maven-publish'
+apply plugin: 'com.jfrog.bintray'
+
+group = 'de.wr.simpledataclasses'
+version = '0.2'
+
+publishing {
+    publications {
+        AnnotationProcessorPublication(MavenPublication) {
+            from components.java
+        }
+    }
+}
+
+bintray {
+    user = project.hasProperty('bintrayUser') ? project.property('bintrayUser') : System.getenv('BINTRAY_USER')
+    key = project.hasProperty('bintrayApiKey') ? project.property('bintrayApiKey') : System.getenv('BINTRAY_API_KEY')
+    publications = ['AnnotationProcessorPublication']
+    pkg {
+        repo = 'SimpleDataClasses'
+        name = 'SimpleDataClassProcessor'
+        userOrg = user
+        licenses = ['Apache-2.0']
+        vcsUrl = 'https://github.com/wgr1984/SimpleDataClassProcessor.git'
+        labels = ['autovalue', 'annotation-processor', 'java', 'kotlin']
+        publicDownloadNumbers = true
+        version {
+            name = '0.2'
+            desc = 'Simple Data Class Processor ' + '0.2'
+            vcsTag = '0.2'
+        }
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            // change to point to your repo, e.g. http://my.org/repo
+            url "$buildDir/repo"
+        }
+    }
+}
+
+dependencies {
+    compile 'com.squareup:javapoet:1.8.0'
+    compile 'com.github.javaparser:javaparser-core:3.2.12'
+    compile 'io.reactivex.rxjava2:rxkotlin:2.1.0'
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jre8:$kotlin_version"
+    compile project(path: ':libSimpleDefaultMethods')
+    compileOnly "com.google.auto.value:auto-value:1.5.2"
+    compileOnly group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.2'
+    compileOnly 'com.ryanharter.auto.value:auto-value-gson-annotations:0.6.0'
+    compile 'com.google.code.gson:gson:2.8.2'
+}
+
+sourceCompatibility = "1.8"
+targetCompatibility = "1.8"
+repositories {
+    mavenCentral()
+}
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+compileTestKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
