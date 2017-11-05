@@ -127,9 +127,6 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                         realMethod.addParameter(it.asType().toString(), it.simpleName.toString())
                     }
 
-                    // create default methods
-                    val defMethodExp = MethodCallExpr(ThisExpr(), methodName)
-
                     val defValueMap: List<Pair<VariableElement, String>>
 
                     if (it.value.any { it.first == method }) { // All parameters should get default values
@@ -152,26 +149,37 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                         defValueMap = defValueMapTemp.reversed()
                     }
 
-                    defValueMap.forEach {
-                        val (name, value) = it
-                        info(method, "Try to set arg %s = %s", name, value)
-                        defMethodExp.addArgument(if (value.isNotEmpty()) value else name.simpleName.toString())
-                    }
-
-                    val block = when {
-                        method.returnType.kind == TypeKind.VOID -> BlockStmt().addStatement(defMethodExp)
-                        else -> BlockStmt().addStatement(ReturnStmt().setExpression(defMethodExp))
-                    }
-
-                    val defMethod = interf.addMethod(methodName, AstModifier.DEFAULT)
                     defValueMap
-                            .filter { it.second.isEmpty() }
-                            .forEach {
-                                info(method, "Added no default param %s %s", it.first.asType().toString(), it.first.simpleName)
-                                defMethod.addParameter(it.first.asType().toString(), it.first.simpleName.toString())
-                            }
-                    defMethod.setBody(block)
-                            .setType(method.returnType.toString())
+                            .dropWhile { it.second.isEmpty() } // ensures non default elements at the beginning are included
+                            .forEach { currentParam ->
+                        // create default methods
+                        val defMethodExp = MethodCallExpr(ThisExpr(), methodName)
+
+                        val passedParams = defValueMap.takeWhile { it != currentParam }
+
+                        info(method, "Passed parameters size %s", passedParams.size)
+
+                        defValueMap.forEach {
+                            val (name, value) = it
+                            info(method, "Try to set arg %s = %s", name, value)
+                            defMethodExp.addArgument(if (value.isNotEmpty() && !passedParams.contains(it)) value else name.simpleName.toString())
+                        }
+
+                        val block = when {
+                            method.returnType.kind == TypeKind.VOID -> BlockStmt().addStatement(defMethodExp)
+                            else -> BlockStmt().addStatement(ReturnStmt().setExpression(defMethodExp))
+                        }
+
+                        val defMethod = interf.addMethod(methodName, AstModifier.DEFAULT)
+                        defValueMap
+                                .filter { it.second.isEmpty() || passedParams.contains(it) }
+                                .forEach {
+                                    info(method, "Added no default param %s %s", it.first.asType().toString(), it.first.simpleName)
+                                    defMethod.addParameter(it.first.asType().toString(), it.first.simpleName.toString())
+                                }
+                        defMethod.setBody(block)
+                                .setType(method.returnType.toString())
+                    }
                 }
 
                 writer.run {
@@ -200,7 +208,7 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
             TypeKind.LONG -> (type.getAnnotation(DefaultLong::class.java)?.value?.toString() ?:
                     if (!allowNonParams) "" else "0") + "l"
             TypeKind.CHAR -> (type.getAnnotation(DefaultChar::class.java)?.value?.toString()?.let { "'$it'" } ?:
-                    if (!allowNonParams) "" else "0")
+                    if (!allowNonParams) "" else "'0'")
             TypeKind.FLOAT -> (type.getAnnotation(DefaultFloat::class.java)?.value?.toString() ?:
                     if (!allowNonParams) "" else "0") + "f"
             TypeKind.DOUBLE -> (type.getAnnotation(DefaultDouble::class.java)?.value?.toString() ?:
