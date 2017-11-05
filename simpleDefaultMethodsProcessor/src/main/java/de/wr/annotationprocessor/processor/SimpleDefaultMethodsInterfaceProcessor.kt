@@ -3,8 +3,10 @@ package de.wr.annotationprocessor.processor
 import com.github.javaparser.ast.CompilationUnit
 import com.github.javaparser.ast.expr.MethodCallExpr
 import com.github.javaparser.ast.expr.ThisExpr
+import com.github.javaparser.ast.expr.TypeExpr
 import com.github.javaparser.ast.stmt.BlockStmt
 import com.github.javaparser.ast.stmt.ReturnStmt
+import com.github.javaparser.ast.type.ClassOrInterfaceType
 import de.wr.libsimpledefaultmethods.*
 import io.reactivex.Observable
 import io.reactivex.rxkotlin.toObservable
@@ -21,6 +23,7 @@ import javax.lang.model.util.Types
 import javax.tools.Diagnostic
 import kotlin.collections.HashSet
 import com.github.javaparser.ast.Modifier as AstModifier
+import com.github.javaparser.ast.type.Type as AstType
 
 class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
 
@@ -103,12 +106,14 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                     val methodName = method.simpleName.toString()
 
                     //create method inside interface
-                    val realMethod = interf.addMethod(methodName)
-                            .setType(method.returnType.toString())
-                            .removeBody()
+                    if (!method.modifiers.contains(Modifier.STATIC)) {
+                        val realMethod = interf.addMethod(methodName)
+                                .setType(method.returnType.toString())
+                                .removeBody()
 
-                    method.parameters.forEach {
-                        realMethod.addParameter(it.asType().toString(), it.simpleName.toString())
+                        method.parameters.forEach {
+                            realMethod.addParameter(it.asType().toString(), it.simpleName.toString())
+                        }
                     }
 
                     val defValueMap: List<Pair<VariableElement, String>>
@@ -137,7 +142,11 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                             .dropWhile { it.second.isEmpty() } // ensures non default elements at the beginning are included
                             .forEach { currentParam ->
                         // create default methods
-                        val defMethodExp = MethodCallExpr(ThisExpr(), methodName)
+                        val defMethodExp = MethodCallExpr(if (method.modifiers.contains(Modifier.STATIC)) {
+                            TypeExpr(ClassOrInterfaceType(null, clazzElement.simpleName.toString()))
+                        } else {
+                            ThisExpr()
+                        }, methodName)
 
                         val passedParams = defValueMap.takeWhile { it != currentParam }
 
@@ -154,7 +163,11 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                             else -> BlockStmt().addStatement(ReturnStmt().setExpression(defMethodExp))
                         }
 
-                        val defMethod = interf.addMethod(methodName, AstModifier.DEFAULT)
+                        val defMethod = interf.addMethod(methodName, if (method.modifiers.contains(Modifier.STATIC)) {
+                            AstModifier.STATIC
+                        } else {
+                            AstModifier.DEFAULT
+                        })
                         defValueMap
                                 .filter { it.second.isEmpty() || passedParams.contains(it) }
                                 .forEach {

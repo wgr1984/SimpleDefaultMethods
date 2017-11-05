@@ -52,4 +52,8 @@ public class TestObject implements de.wr.simpledefaultmethods.TestObjectDefaults
 
     public void testMethod9(int i, @Default Object o) {
     }
+
+    public static void testMethod10(int i, @Default Object o, @DefaultInt(7) int i2) {
+
+    }
 }
