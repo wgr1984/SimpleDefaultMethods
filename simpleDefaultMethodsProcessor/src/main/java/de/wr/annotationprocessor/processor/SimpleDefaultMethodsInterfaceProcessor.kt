@@ -1,7 +1,8 @@
 package de.wr.annotationprocessor.processor
 
 import com.github.javaparser.ast.CompilationUnit
-import com.github.javaparser.ast.expr.*
+import com.github.javaparser.ast.expr.MethodCallExpr
+import com.github.javaparser.ast.expr.ThisExpr
 import com.github.javaparser.ast.stmt.BlockStmt
 import com.github.javaparser.ast.stmt.ReturnStmt
 import de.wr.libsimpledefaultmethods.*
@@ -9,24 +10,16 @@ import io.reactivex.Observable
 import io.reactivex.rxkotlin.toObservable
 import java.io.BufferedWriter
 import java.io.IOException
-
-import javax.annotation.processing.AbstractProcessor
-import javax.annotation.processing.Filer
-import javax.annotation.processing.Messager
-import javax.annotation.processing.ProcessingEnvironment
-import javax.annotation.processing.RoundEnvironment
-import javax.lang.model.SourceVersion
-import javax.lang.model.util.Elements
-import javax.lang.model.util.Types
-import javax.tools.Diagnostic
-
 import java.util.*
-
+import javax.annotation.processing.*
+import javax.lang.model.SourceVersion
 import javax.lang.model.SourceVersion.latestSupported
 import javax.lang.model.element.*
 import javax.lang.model.type.TypeKind
+import javax.lang.model.util.Elements
+import javax.lang.model.util.Types
+import javax.tools.Diagnostic
 import kotlin.collections.HashSet
-
 import com.github.javaparser.ast.Modifier as AstModifier
 
 class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
@@ -52,15 +45,6 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
         filer = processingEnv.filer
         messager = processingEnv.messager
     }
-
-//    private fun addMethodToClass(clazz: TypeElement, method: ExecutableElement) {
-//        val executableElements = methodsForClass[clazz]
-//        if (executableElements != null) {
-//            for (executableElement in executableElements) {
-//                System.err.println(executableElement)
-//            }
-//        }
-//    }
 
     override fun process(annotations: Set<TypeElement>, roundEnv: RoundEnvironment): Boolean {
 
@@ -157,11 +141,11 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
 
                         val passedParams = defValueMap.takeWhile { it != currentParam }
 
-                        info(method, "Passed parameters size %s", passedParams.size)
+                        if (DEFAULT) { info(method, "Passed parameters size %s", passedParams.size) }
 
                         defValueMap.forEach {
                             val (name, value) = it
-                            info(method, "Try to set arg %s = %s", name, value)
+                            if (DEFAULT) { info(method, "Try to set arg %s = %s", name, value) }
                             defMethodExp.addArgument(if (value.isNotEmpty() && !passedParams.contains(it)) value else name.simpleName.toString())
                         }
 
@@ -174,7 +158,7 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                         defValueMap
                                 .filter { it.second.isEmpty() || passedParams.contains(it) }
                                 .forEach {
-                                    info(method, "Added no default param %s %s", it.first.asType().toString(), it.first.simpleName)
+                                    if (DEFAULT) { info(method, "Added no default param %s %s", it.first.asType().toString(), it.first.simpleName) }
                                     defMethod.addParameter(it.first.asType().toString(), it.first.simpleName.toString())
                                 }
                         defMethod.setBody(block)
@@ -191,6 +175,7 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                 info(clazzElement, "Interface default generated: %s %n", fileName)
             } catch (e: IOException) {
                 System.err.println(objectType + " :" + e + e.message)
+                error(clazzElement, "Error: %s %n", e)
             }
         }
     }
@@ -213,15 +198,22 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                     if (!allowNonParams) "" else "0") + "f"
             TypeKind.DOUBLE -> (type.getAnnotation(DefaultDouble::class.java)?.value?.toString() ?:
                     if (!allowNonParams) "" else "0") + "d"
-            TypeKind.ARRAY -> if (!allowNonParams) "" else "new " + type.toString() + "[0]"
+            TypeKind.ARRAY -> if (type.getAnnotation(Default::class.java) == null && !allowNonParams) "" else "new " + convertIfGeneric(type.asType().toString()) + "[0]"
             else -> when (type.asType().toString()) {
                 "java.lang.String" -> type.getAnnotation(DefaultString::class.java)?.value?.let { "\"$it\"" } ?:
                         if (!allowNonParams) "" else "\"\""
-                else -> if (!allowNonParams) "" else "null"
+                else -> if (type.getAnnotation(Default::class.java) == null && !allowNonParams) "" else "null"
             }
         }
-        info(type, "Default value for %s = %s", type, returnValue)
+        if (DEFAULT) { info(type, "Default value for %s = %s", type, returnValue) }
         return returnValue
+    }
+
+    private fun convertIfGeneric(type: String): String {
+        val regex = Regex(".*(<.*>\\[])")
+        val result = regex.find(type)
+        val matchGroup = result?.groups?.get(1)
+        return matchGroup?.let { type.replaceFirst(it.value, "") } ?: type
     }
 
     private fun getPackageName(typeElement: TypeElement) =
@@ -262,5 +254,7 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                 supportedAnnotations.add(it.canonicalName)
             }
         }
+
+        val DEFAULT = false
     }
 }
