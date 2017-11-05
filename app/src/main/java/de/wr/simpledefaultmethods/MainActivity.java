@@ -30,6 +30,7 @@ public class MainActivity extends AppCompatActivity {
 
         TestObject testObject = new TestObject();
         System.out.println(testObject.testMethod6(13, 'H'));
+        TestObject.testMethod11(0,0);
     }
 
     @Override

@@ -2,6 +2,7 @@ package de.wr.annotationprocessor.processor
 
 import com.github.javaparser.ast.CompilationUnit
 import com.github.javaparser.ast.expr.MethodCallExpr
+import com.github.javaparser.ast.expr.NameExpr
 import com.github.javaparser.ast.expr.ThisExpr
 import com.github.javaparser.ast.expr.TypeExpr
 import com.github.javaparser.ast.stmt.BlockStmt
@@ -110,7 +111,7 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                         val methodName = method.simpleName.toString()
 
                         //create method inside interface
-                        if (!method.modifiers.contains(Modifier.STATIC)) {
+                        if (!method.modifiers.contains(Modifier.STATIC) && method.modifiers.contains(Modifier.PUBLIC)) {
                             val realMethod = interf.addMethod(methodName)
                                     .setType(method.returnType.toString())
                                     .removeBody()
@@ -146,11 +147,15 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                                 .dropWhile { it.second.isEmpty() } // ensures non default elements at the beginning are included
                                 .forEach { currentParam ->
                                     // create default methods
-                                    val defMethodExp = MethodCallExpr(if (method.modifiers.contains(Modifier.STATIC)) {
-                                        TypeExpr(ClassOrInterfaceType(null, clazzElement.simpleName.toString()))
-                                    } else {
-                                        ThisExpr()
-                                    }, methodName)
+                                    val defMethodExp = MethodCallExpr(
+                                            if (method.modifiers.contains(Modifier.STATIC)) {
+                                                TypeExpr(ClassOrInterfaceType(null, clazzElement.simpleName.toString()))
+                                            } else if (!method.modifiers.contains(Modifier.PUBLIC)) {
+                                                NameExpr("thizz")
+                                            } else {
+                                                ThisExpr()
+                                            }
+                                    , methodName)
 
                                     val passedParams = defValueMap.takeWhile { it != currentParam }
 
@@ -171,11 +176,15 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                                         else -> BlockStmt().addStatement(ReturnStmt().setExpression(defMethodExp))
                                     }
 
-                                    val defMethod = interf.addMethod(methodName, if (method.modifiers.contains(Modifier.STATIC)) {
-                                        AstModifier.STATIC
-                                    } else {
-                                        AstModifier.DEFAULT
-                                    })
+                                    val defMethod = interf.addMethod(methodName,
+                                            if (method.modifiers.contains(Modifier.STATIC) || !method.modifiers.contains(Modifier.PUBLIC)) {
+                                                AstModifier.STATIC
+                                            } else {
+                                                AstModifier.DEFAULT
+                                            })
+                                    if (!method.modifiers.contains(Modifier.STATIC) && !method.modifiers.contains(Modifier.PUBLIC)) {
+                                        defMethod.addParameter(clazzElement.simpleName.toString(), "thizz")
+                                    }
                                     defValueMap
                                             .filter { it.second.isEmpty() || passedParams.contains(it) }
                                             .forEach {
