@@ -4,7 +4,7 @@ buildscript {
         jcenter()
         mavenCentral()
         maven { url "https://jitpack.io" }
-        maven { url "https://dl.bintray.com/wgr1984/SimpleDataClasses"}
+        maven { url "https://dl.bintray.com/wgr1984/SimpleDefaultMethods"}
     }
 }
 
@@ -44,7 +44,7 @@ android {
 
 repositories {
 //    mavenLocal()
-    maven { url "https://dl.bintray.com/wgr1984/SimpleDataClasses"}
+    maven { url "https://dl.bintray.com/wgr1984/SimpleDefaultMethods"}
 }
 
 dependencies {
@@ -72,8 +72,9 @@ dependencies {
     provided group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.2'
     provided project(path: ':libSimpleDefaultMethods')
     annotationProcessor project(":simpleDefaultMethodsProcessor")
-//    annotationProcessor "de.wr.simpledataclasses:simpleDefaultMethodsProcessor:0.1"
-//    provided "de.wr.simpledataclasses:libSimpleDefaultMethods:0.1"
+//    annotationProcessor "de.wr.simpledefaultmethods:simpleDefaultMethodsProcessor:0.1"
+//    provided "de.wr.simpledefaultmethods:libSimpleDefaultMethods:0.1"
+
 }
 
 //android.defaultConfig.javaCompileOptions.annotationProcessorOptions.includeCompileClasspath = true
