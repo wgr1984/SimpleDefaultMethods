@@ -3,7 +3,6 @@ package de.wr.simpledefaultmethods;
 import de.wr.libsimpledefaultmethods.Default;
 import de.wr.libsimpledefaultmethods.DefaultBool;
 import de.wr.libsimpledefaultmethods.DefaultChar;
-import de.wr.libsimpledefaultmethods.DefaultDouble;
 import de.wr.libsimpledefaultmethods.DefaultFloat;
 import de.wr.libsimpledefaultmethods.DefaultInt;
 import de.wr.libsimpledefaultmethods.DefaultString;
@@ -37,7 +36,7 @@ public class TestObject implements TestObjectDefaults {
 
     }
 
-    public void testMethod6(int i, char c, @DefaultBool(true) boolean b, @DefaultChar('b') char charTest) {
-
+    public String testMethod6(int i, char c, @DefaultBool(true) boolean b, @DefaultChar('b') char charTest) {
+        return i + "," + c + "," + b + "," + charTest;
     }
 }

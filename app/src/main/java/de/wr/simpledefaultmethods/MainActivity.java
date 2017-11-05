@@ -28,8 +28,8 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         ActivityMainBinding binding = DataBindingUtil.setContentView(this, R.layout.activity_main);
 
-//        DataObject1$Builder
-//        Toast.makeText(this, sampleField.getValue(), Toast.LENGTH_LONG ).show();
+        TestObject testObject = new TestObject();
+        System.out.println(testObject.testMethod6(13, 'H'));
     }
 
     @Override
