@@ -42,6 +42,7 @@ public class TestObject implements de.wr.simpledefaultmethods.TestObjectDefaults
 ```
 this will allow you to use methods without the need of passing
 parameters annotated by default values
+![default method sample](https://github.com/wgr1984/SimpleDefaultMethods/raw/master/default_methods_sample.png)
 
 Note: Using ```@Default``` annotating the method itself will
 use default values ```zero / null / array[0]``` for non annotated
