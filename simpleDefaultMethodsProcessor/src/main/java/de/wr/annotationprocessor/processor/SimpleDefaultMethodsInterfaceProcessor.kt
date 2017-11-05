@@ -133,9 +133,7 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                     val defValueMap: List<Pair<VariableElement, String>>
 
                     if (it.value.any { it.first == method }) { // All parameters should get default values
-                        defValueMap = method.parameters.map {
-                            Pair(it, getDefaultValue(it))
-                        }
+                        defValueMap = method.parameters.map { Pair(it, getDefaultValue(it)) }
                     } else {
                         // check starting from the end of the param list
                         var lastPair: Pair<VariableElement, String>? = null
@@ -201,7 +199,7 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                     if (!allowNonParams) "" else "0")
             TypeKind.LONG -> (type.getAnnotation(DefaultLong::class.java)?.value?.toString() ?:
                     if (!allowNonParams) "" else "0") + "l"
-            TypeKind.CHAR -> (type.getAnnotation(DefaultChar::class.java)?.value?.toString() ?:
+            TypeKind.CHAR -> (type.getAnnotation(DefaultChar::class.java)?.value?.toString()?.let { "'$it'" } ?:
                     if (!allowNonParams) "" else "0")
             TypeKind.FLOAT -> (type.getAnnotation(DefaultFloat::class.java)?.value?.toString() ?:
                     if (!allowNonParams) "" else "0") + "f"
@@ -246,6 +244,7 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                 add(DefaultLong::class.java)
                 add(DefaultShort::class.java)
                 add(DefaultByte::class.java)
+                add(DefaultChar::class.java)
                 add(DefaultBool::class.java)
                 add(DefaultFloat::class.java)
                 add(DefaultDouble::class.java)

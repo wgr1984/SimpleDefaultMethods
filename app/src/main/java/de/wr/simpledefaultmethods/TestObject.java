@@ -2,6 +2,7 @@ package de.wr.simpledefaultmethods;
 
 import de.wr.libsimpledefaultmethods.Default;
 import de.wr.libsimpledefaultmethods.DefaultBool;
+import de.wr.libsimpledefaultmethods.DefaultChar;
 import de.wr.libsimpledefaultmethods.DefaultInt;
 import de.wr.libsimpledefaultmethods.DefaultString;
 import de.wr.simpledefaultmethods.TestObjectDefaults;
@@ -13,7 +14,7 @@ import de.wr.simpledefaultmethods.TestObjectDefaults;
 public class TestObject implements TestObjectDefaults {
 
     @Default
-    public void testMethod(int i, @DefaultBool(true) boolean b, String s) {
+    public void testMethod(int i, @DefaultBool(true) boolean b, String s, @DefaultChar('b') char charTest) {
 
     }
 
