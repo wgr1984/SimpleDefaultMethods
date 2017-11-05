@@ -103,79 +103,90 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
 
                     info(method, "Class %s contains default method %s", clazzElement, method.toString() )
 
-                    val methodName = method.simpleName.toString()
-
-                    //create method inside interface
-                    if (!method.modifiers.contains(Modifier.STATIC)) {
-                        val realMethod = interf.addMethod(methodName)
-                                .setType(method.returnType.toString())
-                                .removeBody()
-
-                        method.parameters.forEach {
-                            realMethod.addParameter(it.asType().toString(), it.simpleName.toString())
-                        }
-                    }
-
-                    val defValueMap: List<Pair<VariableElement, String>>
-
-                    if (it.value.any { it.first == method }) { // All parameters should get default values
-                        defValueMap = method.parameters.map { Pair(it, getDefaultValue(it)) }
+                    if (method.modifiers.contains(Modifier.PRIVATE)) {
+                        error(method, "Class %s contains private default method %s which is not supported !", clazzElement, method.toString() )
                     } else {
-                        // check starting from the end of the param list
-                        var lastPair: Pair<VariableElement, String>? = null
-                        val reversed = method.parameters.reversed()
-                        val defValueMapTemp = mutableListOf<Pair<VariableElement, String>>()
-                        for (param in reversed) {
-                            val pair = Pair(param, getDefaultValue(param, false))
-                            if (pair.second.isNotEmpty()) {
-                                if (lastPair?.second?.isEmpty() == true) {
-                                    error(param, "Default parameter cannot be followed by non default one: %s", pair.first)
-                                }
+
+                        val methodName = method.simpleName.toString()
+
+                        //create method inside interface
+                        if (!method.modifiers.contains(Modifier.STATIC)) {
+                            val realMethod = interf.addMethod(methodName)
+                                    .setType(method.returnType.toString())
+                                    .removeBody()
+
+                            method.parameters.forEach {
+                                realMethod.addParameter(it.asType().toString(), it.simpleName.toString())
                             }
-                            lastPair = pair
-                            defValueMapTemp.add(pair)
                         }
-                        defValueMap = defValueMapTemp.reversed()
-                    }
 
-                    defValueMap
-                            .dropWhile { it.second.isEmpty() } // ensures non default elements at the beginning are included
-                            .forEach { currentParam ->
-                        // create default methods
-                        val defMethodExp = MethodCallExpr(if (method.modifiers.contains(Modifier.STATIC)) {
-                            TypeExpr(ClassOrInterfaceType(null, clazzElement.simpleName.toString()))
+                        val defValueMap: List<Pair<VariableElement, String>>
+
+                        if (it.value.any { it.first == method }) { // All parameters should get default values
+                            defValueMap = method.parameters.map { Pair(it, getDefaultValue(it)) }
                         } else {
-                            ThisExpr()
-                        }, methodName)
-
-                        val passedParams = defValueMap.takeWhile { it != currentParam }
-
-                        if (DEFAULT) { info(method, "Passed parameters size %s", passedParams.size) }
-
-                        defValueMap.forEach {
-                            val (name, value) = it
-                            if (DEFAULT) { info(method, "Try to set arg %s = %s", name, value) }
-                            defMethodExp.addArgument(if (value.isNotEmpty() && !passedParams.contains(it)) value else name.simpleName.toString())
-                        }
-
-                        val block = when {
-                            method.returnType.kind == TypeKind.VOID -> BlockStmt().addStatement(defMethodExp)
-                            else -> BlockStmt().addStatement(ReturnStmt().setExpression(defMethodExp))
-                        }
-
-                        val defMethod = interf.addMethod(methodName, if (method.modifiers.contains(Modifier.STATIC)) {
-                            AstModifier.STATIC
-                        } else {
-                            AstModifier.DEFAULT
-                        })
-                        defValueMap
-                                .filter { it.second.isEmpty() || passedParams.contains(it) }
-                                .forEach {
-                                    if (DEFAULT) { info(method, "Added no default param %s %s", it.first.asType().toString(), it.first.simpleName) }
-                                    defMethod.addParameter(it.first.asType().toString(), it.first.simpleName.toString())
+                            // check starting from the end of the param list
+                            var lastPair: Pair<VariableElement, String>? = null
+                            val reversed = method.parameters.reversed()
+                            val defValueMapTemp = mutableListOf<Pair<VariableElement, String>>()
+                            for (param in reversed) {
+                                val pair = Pair(param, getDefaultValue(param, false))
+                                if (pair.second.isNotEmpty()) {
+                                    if (lastPair?.second?.isEmpty() == true) {
+                                        error(param, "Default parameter cannot be followed by non default one: %s", pair.first)
+                                    }
                                 }
-                        defMethod.setBody(block)
-                                .setType(method.returnType.toString())
+                                lastPair = pair
+                                defValueMapTemp.add(pair)
+                            }
+                            defValueMap = defValueMapTemp.reversed()
+                        }
+
+                        defValueMap
+                                .dropWhile { it.second.isEmpty() } // ensures non default elements at the beginning are included
+                                .forEach { currentParam ->
+                                    // create default methods
+                                    val defMethodExp = MethodCallExpr(if (method.modifiers.contains(Modifier.STATIC)) {
+                                        TypeExpr(ClassOrInterfaceType(null, clazzElement.simpleName.toString()))
+                                    } else {
+                                        ThisExpr()
+                                    }, methodName)
+
+                                    val passedParams = defValueMap.takeWhile { it != currentParam }
+
+                                    if (DEFAULT) {
+                                        info(method, "Passed parameters size %s", passedParams.size)
+                                    }
+
+                                    defValueMap.forEach {
+                                        val (name, value) = it
+                                        if (DEFAULT) {
+                                            info(method, "Try to set arg %s = %s", name, value)
+                                        }
+                                        defMethodExp.addArgument(if (value.isNotEmpty() && !passedParams.contains(it)) value else name.simpleName.toString())
+                                    }
+
+                                    val block = when {
+                                        method.returnType.kind == TypeKind.VOID -> BlockStmt().addStatement(defMethodExp)
+                                        else -> BlockStmt().addStatement(ReturnStmt().setExpression(defMethodExp))
+                                    }
+
+                                    val defMethod = interf.addMethod(methodName, if (method.modifiers.contains(Modifier.STATIC)) {
+                                        AstModifier.STATIC
+                                    } else {
+                                        AstModifier.DEFAULT
+                                    })
+                                    defValueMap
+                                            .filter { it.second.isEmpty() || passedParams.contains(it) }
+                                            .forEach {
+                                                if (DEFAULT) {
+                                                    info(method, "Added no default param %s %s", it.first.asType().toString(), it.first.simpleName)
+                                                }
+                                                defMethod.addParameter(it.first.asType().toString(), it.first.simpleName.toString())
+                                            }
+                                    defMethod.setBody(block)
+                                            .setType(method.returnType.toString())
+                                }
                     }
                 }
 
