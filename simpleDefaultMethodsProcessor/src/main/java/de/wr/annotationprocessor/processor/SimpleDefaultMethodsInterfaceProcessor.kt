@@ -25,7 +25,6 @@ import java.util.*
 import javax.lang.model.SourceVersion.latestSupported
 import javax.lang.model.element.*
 import javax.lang.model.type.TypeKind
-import javax.lang.model.type.TypeMirror
 import kotlin.collections.HashSet
 
 import com.github.javaparser.ast.Modifier as AstModifier
@@ -131,23 +130,34 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                     // create default methods
                     val defMethodExp = MethodCallExpr(ThisExpr(), methodName)
 
-                    var defValueMap = listOf<Pair<String, String>>()
+                    val defValueMap: List<Pair<VariableElement, String>>
 
-                    if (it.value.any { it.first == method }) {
+                    if (it.value.any { it.first == method }) { // All parameters should get default values
                         defValueMap = method.parameters.map {
-                            Pair(it.simpleName.toString(), getDefaultValue(it.asType()))
+                            Pair(it, getDefaultValue(it))
                         }
-                    }
-
-                    it.value.filter { it.first != method }.forEach {
-
-                        info(it.second, "Method %s contains default elements %s", it.second, it.first )
+                    } else {
+                        // check starting from the end of the param list
+                        var lastPair: Pair<VariableElement, String>? = null
+                        val reversed = method.parameters.reversed()
+                        val defValueMapTemp = mutableListOf<Pair<VariableElement, String>>()
+                        for (param in reversed) {
+                            val pair = Pair(param, getDefaultValue(param, false))
+                            if (pair.second.isNotEmpty()) {
+                                if (lastPair?.second?.isEmpty() == true) {
+                                    error(param, "Default parameter cannot be followed by non default one: %s", pair.first)
+                                }
+                            }
+                            lastPair = pair
+                            defValueMapTemp.add(pair)
+                        }
+                        defValueMap = defValueMapTemp.reversed()
                     }
 
                     defValueMap.forEach {
                         val (name, value) = it
                         info(method, "Try to set arg %s = %s", name, value)
-                        defMethodExp.addArgument(value)
+                        defMethodExp.addArgument(if (value.isNotEmpty()) value else name.simpleName.toString())
                     }
 
                     val block = when {
@@ -155,7 +165,15 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
                         else -> BlockStmt().addStatement(ReturnStmt().setExpression(defMethodExp))
                     }
 
-                    interf.addMethod(methodName, AstModifier.DEFAULT).setBody(block).setType(method.returnType.toString())
+                    val defMethod = interf.addMethod(methodName, AstModifier.DEFAULT)
+                    defValueMap
+                            .filter { it.second.isEmpty() }
+                            .forEach {
+                                info(method, "Added no default param %s %s", it.first.asType().toString(), it.first.simpleName)
+                                defMethod.addParameter(it.first.asType().toString(), it.first.simpleName.toString())
+                            }
+                    defMethod.setBody(block)
+                            .setType(method.returnType.toString())
                 }
 
                 writer.run {
@@ -171,307 +189,37 @@ class SimpleDefaultMethodsInterfaceProcessor : AbstractProcessor() {
         }
     }
 
-    private fun getDefaultValue(type: TypeMirror): String {
-        return when(type.kind) {
-            TypeKind.INT -> "0"
-            TypeKind.BOOLEAN -> "false"
-            TypeKind.BYTE -> "(byte)0"
-            TypeKind.SHORT -> "(short)0"
-            TypeKind.LONG -> "0l"
-            TypeKind.CHAR -> "0"
-            TypeKind.FLOAT -> "0.0f"
-            TypeKind.DOUBLE -> "0.0d"
-            TypeKind.ARRAY -> "new " + type.toString() + "[0]"
-            else -> when (type.toString()) {
-                "java.lang.String" -> "\"\""
-                else -> "null"
+    private fun getDefaultValue(type: VariableElement, allowNonParams: Boolean = true): String {
+        val returnValue = when(type.asType().kind) {
+            TypeKind.INT -> type.getAnnotation(DefaultInt::class.java)?.value?.toString() ?:
+                    if (!allowNonParams) "" else "0"
+            TypeKind.BOOLEAN -> type.getAnnotation(DefaultBool::class.java)?.value?.toString() ?:
+                    if (!allowNonParams) "" else "false"
+            TypeKind.BYTE -> "(byte)" + (type.getAnnotation(DefaultByte::class.java)?.value?.toString() ?:
+                    if (!allowNonParams) "" else "0")
+            TypeKind.SHORT -> "(short)" + (type.getAnnotation(DefaultShort::class.java)?.value?.toString() ?:
+                    if (!allowNonParams) "" else "0")
+            TypeKind.LONG -> (type.getAnnotation(DefaultLong::class.java)?.value?.toString() ?:
+                    if (!allowNonParams) "" else "0") + "l"
+            TypeKind.CHAR -> (type.getAnnotation(DefaultChar::class.java)?.value?.toString() ?:
+                    if (!allowNonParams) "" else "0")
+            TypeKind.FLOAT -> (type.getAnnotation(DefaultFloat::class.java)?.value?.toString() ?:
+                    if (!allowNonParams) "" else "0") + "f"
+            TypeKind.DOUBLE -> (type.getAnnotation(DefaultDouble::class.java)?.value?.toString() ?:
+                    if (!allowNonParams) "" else "0") + "d"
+            TypeKind.ARRAY -> if (!allowNonParams) "" else "new " + type.toString() + "[0]"
+            else -> when (type.asType().toString()) {
+                "java.lang.String" -> type.getAnnotation(DefaultString::class.java)?.value?.let { "\"$it\"" } ?:
+                        if (!allowNonParams) "" else "\"\""
+                else -> if (!allowNonParams) "" else "null"
             }
         }
+        info(type, "Default value for %s = %s", type, returnValue)
+        return returnValue
     }
 
-    //    private fun generateAutoValueGsonFactory(typeElement: TypeElement) {
-//        try {
-//            val fileName = typeElement.simpleName.substring(0, 1).toUpperCase() + typeElement.simpleName.substring(1) + "TypeAdapterFactory"
-//            val source = processingEnv.filer.createSourceFile(fileName)
-//
-//            val writer = BufferedWriter(source.openWriter())
-//
-//            val cu = CompilationUnit();
-//            // set the package
-//            cu.setPackageDeclaration(getPackageName(typeElement));
-//
-//            cu.addClass(fileName, AstModifier.PUBLIC, AstModifier.ABSTRACT)
-//                .addAnnotation(GsonTypeAdapterFactory::class.java)
-//                .addImplementedType(TypeAdapterFactory::class.java)
-//                .addMethod("create", AstModifier.PUBLIC, AstModifier.STATIC).setBody(
-//                    BlockStmt().addStatement(ReturnStmt()
-//                            .setExpression(ObjectCreationExpr().setType("AutoValueGson_$fileName")))
-//                ).setType(TypeAdapterFactory::class.java)
-//
-//            writer.run {
-//                write(cu.toString())
-//                flush()
-//                close()
-//            }
-//
-//            info(typeElement, "Gson Data class generated: %s %n", fileName)
-//        } catch (e: IOException) {
-//            System.err.println(objectType + " :" + e + e.message)
-//        }
-//    }
-//
-//    private fun generateAutoValueClasses(element: TypeElement, it: ExecutableElement, typeElement: TypeElement) {
-//        info(element, "Data class def found: %s", it.simpleName)
-//
-//        try {
-//            val fileName = it.simpleName.substring(0, 1).toUpperCase() + it.simpleName.substring(1)
-//            val source = processingEnv.filer.createSourceFile(fileName)
-//
-//            val writer = BufferedWriter(source.openWriter())
-//
-//            generateDataClass(
-//                    element,
-//                    writer,
-//                    fileName,
-//                    getPackageName(typeElement),
-//                    it)
-//
-//            writer.run {
-//                flush()
-//                close()
-//            }
-//
-//            info(element, "Data class generated: %s %n", fileName)
-//        } catch (e: IOException) {
-//            System.err.println(objectType + " :" + e + e.message)
-//        }
-//    }
-//
     private fun getPackageName(typeElement: TypeElement) =
             typeElement.qualifiedName.substring(0, typeElement.qualifiedName.length - typeElement.simpleName.length - 1)
-
-//    private fun generateDataClass(factoryElement: TypeElement, writer: BufferedWriter?, className: String, packageName: String, creationMethod: ExecutableElement) {
-//        val cu = CompilationUnit();
-//        val cuBuilder = CompilationUnit();
-//        // set the package
-//        cu.setPackageDeclaration(packageName);
-//
-//        // create the type declaration
-//        val type = cu.addClass(className, AstModifier.ABSTRACT)
-//                    .addAnnotation(AutoValue::class.java)
-//        factoryElement.annotationMirrors
-//                .union(creationMethod.annotationMirrors)
-//                .find { it.toString().contains("Parcelable") }?.let {
-//            type.addImplementedType("android.os.Parcelable")
-//        }
-//        type.tryAddImportToParentCompilationUnit(AutoValue.Builder::class.java)
-//
-//        val builderType = cuBuilder.addClass("Builder", AstModifier.ABSTRACT, AstModifier.STATIC)
-//                            .addAnnotation(AutoValue.Builder::class.java.canonicalName)
-//        type.addMember(builderType)
-//
-//        var newTypeAdapterStmt:Expression? = null
-//        // add gson adapter
-//        val gson = (factoryElement.getAnnotation(Gson::class.java)
-//                ?: (creationMethod.getAnnotation(Gson::class.java)));
-//
-//        gson?.let {
-//            if (it.value) {
-//                newTypeAdapterStmt = ObjectCreationExpr()
-//                        .setType("AutoValue_$className.GsonTypeAdapter")
-//                        .addArgument("gson")
-//            }
-//        }
-//
-//        val builderMethod = type.addMethod("builder", AstModifier.STATIC)
-//                                .setType("Builder")
-//
-//        val builderBody = BlockStmt()
-//        val newOperation = ObjectCreationExpr().setType("AutoValue_$className.Builder")
-//
-//        var builderCall:Expression = newOperation
-//
-//        creationMethod.parameters.forEach {
-//            val propertyName = it.simpleName.toString()
-//            // create a method
-//
-//            // Create Getter
-//            val propertyGetter = type.addMethod(propertyName, AstModifier.PUBLIC, AstModifier.ABSTRACT)
-//                    .setType(it.asType().toString())
-//                    .removeBody()
-//
-//            // Create Setter
-//            val propertySetter = builderType.addMethod(propertyName, AstModifier.PUBLIC, AstModifier.ABSTRACT)
-//                    .addParameter(it.asType().toString(), propertyName)
-//                    .setType("Builder")
-//                    .removeBody()
-//
-//            //Name annotations
-//            it.getAnnotation(Named::class.java)?.let {
-//                propertyGetter.addAndGetAnnotation(SerializedName::class.java)
-//                        .addPair("value", "\"" + it.value + "\"")
-//            }
-//
-//            //set defaults
-//            // ints
-//            it.getAnnotation(DefaultInt::class.java)?.let { def ->
-//                builderCall = MethodCallExpr(builderCall, propertyName)
-//                        .addArgument(IntegerLiteralExpr(def.value))
-//                newTypeAdapterStmt = newTypeAdapterStmt?.let {
-//                    MethodCallExpr(it, "setDefault" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1))
-//                            .addArgument(IntegerLiteralExpr(def.value))
-//                }
-//            }
-//
-//            // longs
-//            it.getAnnotation(DefaultLong::class.java)?.let { def ->
-//                builderCall = MethodCallExpr(builderCall, propertyName)
-//                        .addArgument(LongLiteralExpr(def.value))
-//                newTypeAdapterStmt = newTypeAdapterStmt?.let {
-//                    MethodCallExpr(it, "setDefault" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1))
-//                            .addArgument(LongLiteralExpr(def.value))
-//                }
-//            }
-//
-//            // short
-//            it.getAnnotation(DefaultShort::class.java)?.let { def ->
-//                builderCall = MethodCallExpr(builderCall, propertyName)
-//                        .addArgument("(short)"+def.value.toString())
-//                newTypeAdapterStmt = newTypeAdapterStmt?.let {
-//                    MethodCallExpr(it, "setDefault" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1))
-//                            .addArgument("(short)"+def.value.toString())
-//                }
-//            }
-//
-//            // Byte
-//            it.getAnnotation(DefaultByte::class.java)?.let { def ->
-//                builderCall = MethodCallExpr(builderCall, propertyName)
-//                        .addArgument("(byte)"+def.value.toString())
-//                newTypeAdapterStmt = newTypeAdapterStmt?.let {
-//                    MethodCallExpr(it, "setDefault" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1))
-//                            .addArgument("(byte)"+def.value.toString())
-//                }
-//            }
-//
-//            // Boolean
-//            it.getAnnotation(DefaultBool::class.java)?.let { def ->
-//                builderCall = MethodCallExpr(builderCall, propertyName)
-//                        .addArgument(BooleanLiteralExpr(def.value))
-//                newTypeAdapterStmt = newTypeAdapterStmt?.let {
-//                    MethodCallExpr(it, "setDefault" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1))
-//                            .addArgument(BooleanLiteralExpr(def.value))
-//                }
-//            }
-//
-//            // Double
-//            it.getAnnotation(DefaultDouble::class.java)?.let { def ->
-//                builderCall = MethodCallExpr(builderCall, propertyName)
-//                        .addArgument(DoubleLiteralExpr(def.value))
-//                newTypeAdapterStmt = newTypeAdapterStmt?.let {
-//                    MethodCallExpr(it, "setDefault" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1))
-//                            .addArgument(DoubleLiteralExpr(def.value))
-//                }
-//            }
-//
-//            // Float
-//            it.getAnnotation(DefaultFloat::class.java)?.let { def ->
-//                builderCall = MethodCallExpr(builderCall, propertyName)
-//                        .addArgument(def.value.toString()+"f")
-//                newTypeAdapterStmt = newTypeAdapterStmt?.let {
-//                    MethodCallExpr(it, "setDefault" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1))
-//                            .addArgument(def.value.toString()+"f")
-//                }
-//            }
-//
-//            //Strings
-//            it.getAnnotation(DefaultString::class.java)?.let { def ->
-//                builderCall = MethodCallExpr(builderCall, propertyName)
-//                        .addArgument(StringLiteralExpr(def.value))
-//                newTypeAdapterStmt = newTypeAdapterStmt?.let {
-//                    MethodCallExpr(it, "setDefault" + propertyName.substring(0, 1).toUpperCase() + propertyName.substring(1))
-//                            .addArgument(StringLiteralExpr(def.value))
-//                }
-//            }
-//
-//            //def values for primary types
-//            it.asType().kind.let { kind ->
-//                if (kind.isPrimitive && it.annotationMirrors.isEmpty()) {
-//                    val defaultMethod = MethodCallExpr(builderCall, propertyName)
-//                    when(kind) {
-//                        TypeKind.INT -> "0"
-//                        TypeKind.BOOLEAN -> "false"
-//                        TypeKind.BYTE -> "(byte)0"
-//                        TypeKind.SHORT -> "(short)0"
-//                        TypeKind.LONG -> "0l"
-//                        TypeKind.CHAR -> "0"
-//                        TypeKind.FLOAT -> "0.0f"
-//                        TypeKind.DOUBLE -> "0.0d"
-//                        else -> ""
-//                    }.takeIf { !it.isEmpty() }?.let (defaultMethod::addArgument)
-//                    builderCall = defaultMethod
-//                }
-//            }
-//
-//            //Nullables
-//            if (!it.asType().kind.isPrimitive) {
-//                val nullableAnnotated =
-//                        (factoryElement.annotationMirrors
-//                            .union(creationMethod.annotationMirrors)
-//                            .any { it.toString().contains("Nullable") }
-//                            && !it.annotationMirrors
-//                                .any { it.toString().toLowerCase().contains("nonnull") })
-//                        || it.annotationMirrors
-//                            .any { it.toString().contains("Nullable") }
-//
-//                if (nullableAnnotated) {
-//                    propertyGetter.addAnnotation(javax.annotation.Nullable::class.java)
-//                    propertySetter.parameters.forEach { it.addAnnotation(javax.annotation.Nullable::class.java) }
-//                } else {
-//                    propertyGetter.addAnnotation(javax.annotation.Nonnull::class.java)
-//                    propertySetter.parameters.forEach { it.addAnnotation(javax.annotation.Nonnull::class.java) }
-//                }
-//            }
-//        }
-//
-//        val returnStm = ReturnStmt(builderCall)
-//        builderBody.addStatement(returnStm)
-//        builderMethod.setBody(builderBody)
-//
-//        // gson part 2
-//        gson?.let {
-//            val gsonTypeAdapter = type.addMethod("typeAdapter", AstModifier.PUBLIC, AstModifier.STATIC)
-//                    .setType(TypeAdapter::class.java.canonicalName+"<"+className+">")
-//                    .addParameter(com.google.gson.Gson::class.java, "gson")
-//
-//            val typeAdapterBody = BlockStmt()
-//
-//            if (newTypeAdapterStmt == null) {
-//                newTypeAdapterStmt = ObjectCreationExpr()
-//                        .setType("AutoValue_$className.GsonTypeAdapter")
-//                        .addArgument("gson")
-//            }
-//
-//            val typeAdapterReturn = ReturnStmt(newTypeAdapterStmt)
-//
-//            typeAdapterBody.addStatement(typeAdapterReturn)
-//            gsonTypeAdapter.setBody(typeAdapterBody)
-//        }
-//
-//        // Add build method
-//        builderType.addMethod("build", AstModifier.PUBLIC, AstModifier.ABSTRACT)
-//                .setType(className)
-//                .removeBody()
-//
-//        // toBuilder
-//        type.addMethod("toBuilder", AstModifier.PUBLIC, AstModifier.ABSTRACT)
-//                .setType("Builder")
-//                .removeBody()
-//
-//        writer?.run {
-//            write(cu.toString())
-//            flush()
-//        }
-//    }
 
     private fun error(e: Element, msg: String, vararg args: Any) {
         messager.printMessage(
